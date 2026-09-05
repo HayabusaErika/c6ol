@@ -1102,9 +1102,10 @@ pub(crate) fn export_board_image(record: &Record) {
         return;
     };
 
+    let stones = record.stones().collect::<Vec<_>>();
     // Calculate bounds.
     let (mut min_x, mut max_x, mut min_y, mut max_y) = (i16::MAX, i16::MIN, i16::MAX, i16::MIN);
-    for (p, _) in record.stones() {
+    for &(p, _) in &stones {
         min_x = min_x.min(p.x);
         max_x = max_x.max(p.x);
         min_y = min_y.min(p.y);
@@ -1112,18 +1113,37 @@ pub(crate) fn export_board_image(record: &Record) {
     }
 
     if min_x == i16::MAX {
-        return;
+        min_x = 0;
+        min_y = 0;
+        max_x = 0;
+        max_y = 0;
     }
 
-    let padding = 3;
+    let padding = 4;
+    //in case of winning stone close to the edge which might contribute to the WinRing invisiable
+    let cell_size: f64 = 20.0;
+    let line_width: f64 = 1.0;
+    let stone_radius: f64 = cell_size * 0.4;
+    let origin_dot_radius: f64 = cell_size * 0.15;
+    let win_ring_radius: f64 = stone_radius * 1.3;
+    let win_ring_width: f64 = 3.0;
+    let full_circle = 2.0 * std::f64::consts::PI;
+    let white_stone_line_width: f64 = 1.0;
+
     min_x -= padding;
     max_x += padding;
     min_y -= padding;
     max_y += padding;
 
-    let cell_size = 20.0;
     let width = (max_x - min_x + 1) as f64 * cell_size;
     let height = (max_y - min_y + 1) as f64 * cell_size;
+
+    let board_to_canvas_x = |x: i16| ((x - min_x) as f64 + 0.5) * cell_size;
+    let board_to_canvas_y = |y: i16| ((y - min_y) as f64 + 0.5) * cell_size;
+    let grid_left = board_to_canvas_x(min_x);
+    let grid_top = board_to_canvas_y(min_y);
+    let grid_right = board_to_canvas_x(max_x); //merry x(max_x)!
+    let grid_bottom = board_to_canvas_y(max_y);
 
     // Create canvas.
     let canvas = document
@@ -1145,22 +1165,23 @@ pub(crate) fn export_board_image(record: &Record) {
 
     // Grid.
     ctx.set_stroke_style_str("black");
-    ctx.set_line_width(1.0);
+    ctx.set_line_width(line_width);
 
     for x in min_x..=max_x {
-        let px = ((x - min_x) as f64 + 0.5) * cell_size;
+        let px = board_to_canvas_x(x);
         ctx.begin_path();
-        ctx.move_to(px, 0.0);
-        ctx.line_to(px, height);
+        ctx.move_to(px, grid_top);
+        ctx.line_to(px, grid_bottom);
         ctx.stroke();
     }
 
     for y in min_y..=max_y {
-        let py = ((y - min_y) as f64 + 0.5) * cell_size;
+        let py = board_to_canvas_y(y);
         ctx.begin_path();
-        ctx.move_to(0.0, py);
-        ctx.line_to(width, py);
+        ctx.move_to(grid_left, py);
+        ctx.line_to(grid_right, py);
         ctx.stroke();
+        //Now the grid will draw till the outer intersection.
     }
 
     // Origin dot.
@@ -1170,24 +1191,22 @@ pub(crate) fn export_board_image(record: &Record) {
         && min_y <= 0
         && 0 <= max_y
     {
-        let px = ((-min_x) as f64 + 0.5) * cell_size;
-        let py = ((-min_y) as f64 + 0.5) * cell_size;
+        let px = board_to_canvas_x(0);
+        let py = board_to_canvas_y(0);
         ctx.set_fill_style_str("black");
         ctx.begin_path();
-        ctx.arc(px, py, cell_size * 0.15, 0.0, 2.0 * std::f64::consts::PI)
+        ctx.arc(px, py, origin_dot_radius, 0.0, full_circle)
             .unwrap();
         ctx.fill();
     }
 
-    // Stones.
-    let radius = cell_size * 0.4;
-    for (p, stone) in record.stones() {
-        let px = ((p.x - min_x) as f64 + 0.5) * cell_size;
-        let py = ((p.y - min_y) as f64 + 0.5) * cell_size;
+    // Stones. a lot of stones.
+    for &(p, stone) in &stones {
+        let px = board_to_canvas_x(p.x);
+        let py = board_to_canvas_y(p.y);
 
         ctx.begin_path();
-        ctx.arc(px, py, radius, 0.0, 2.0 * std::f64::consts::PI)
-            .unwrap();
+        ctx.arc(px, py, stone_radius, 0.0, full_circle).unwrap();
 
         match stone {
             Stone::Black => {
@@ -1198,34 +1217,31 @@ pub(crate) fn export_board_image(record: &Record) {
                 ctx.set_fill_style_str("white");
                 ctx.fill();
                 ctx.set_stroke_style_str("black");
+                ctx.set_line_width(white_stone_line_width);
                 ctx.stroke();
+                //white_stone_line_width control it
             }
         }
     }
 
     // Win rings.
-    if record.is_ended() {
-        if let Some(Move::Win(p, dir)) = record.prev_move() {
-            let stone = record.stone_at(p).unwrap();
-            let color = if stone == Stone::Black {
-                "white"
-            } else {
-                "black"
-            };
-            let ring_radius = radius * 1.3;
+    if let Some(Move::Win(p, dir)) = record.prev_move() {
+        let stone = record.stone_at(p).unwrap();
+        let color = if stone == Stone::Black {
+            "white"
+        } else {
+            "black"
+        };
+        for i in 0..6 {
+            let point = p + dir.offset(i);
+            let px = board_to_canvas_x(point.x);
+            let py = board_to_canvas_y(point.y);
 
-            for i in 0..6 {
-                let point = p + dir.offset(i);
-                let px = ((point.x - min_x) as f64 + 0.5) * cell_size;
-                let py = ((point.y - min_y) as f64 + 0.5) * cell_size;
-
-                ctx.set_stroke_style_str(color);
-                ctx.set_line_width(3.0);
-                ctx.begin_path();
-                ctx.arc(px, py, ring_radius, 0.0, 2.0 * std::f64::consts::PI)
-                    .unwrap();
-                ctx.stroke();
-            }
+            ctx.set_stroke_style_str(color);
+            ctx.set_line_width(win_ring_width);
+            ctx.begin_path();
+            ctx.arc(px, py, win_ring_radius, 0.0, full_circle).unwrap();
+            ctx.stroke();
         }
     }
 
