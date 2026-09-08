@@ -571,6 +571,10 @@ pub enum HelpRetVal {
 impl DialogView for HelpDialog {
     type RetVal = HelpRetVal;
 
+    fn class(&self) -> Option<&'static str> {
+        Some("help")
+    }
+
     fn contents(self) -> impl IntoView {
         view! {
             <p class="title">"Help"</p>
