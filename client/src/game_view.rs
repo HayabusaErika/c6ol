@@ -20,6 +20,9 @@ const WIN_RING_COLOR: &str = "seagreen";
 
 const DEFAULT_VIEW_SIZE: i16 = 15;
 
+// Keep exported board images sharp instead of limiting them to the display size.
+const EXPORT_IMAGE_SIZE: i32 = 2048;
+
 const LINE_WIDTH: f32 = 1.0 / 24.0;
 const LINE_DASH: f32 = 1.0 / 5.0;
 
@@ -1040,6 +1043,8 @@ pub(crate) fn GameView(
         >
             <svg
                 class="view"
+                width=EXPORT_IMAGE_SIZE
+                height=EXPORT_IMAGE_SIZE
                 viewBox=move || format!("0 0 {s} {s}", s = view_size.get() + 1)
                 fill="none"
             >
